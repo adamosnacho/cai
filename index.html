@@ -260,6 +260,13 @@
                                 return `$${tooltipItem.raw.y.toFixed(2)}`;
                             }
                         }
+                    },
+                    title: {
+                        display: true,
+                        text: `Prediction for ${document.getElementById("SYMBOL").value}, ${data.confident === 0 ? " [not " : "["}confident]`,
+                        font: {
+                            size: 18
+                        }
                     }
                 }
             },
