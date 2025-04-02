@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Candle AI</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f4f4f4;
+            flex-wrap: wrap;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            width: calc(40% - 20px);
+            text-align: center;
+            margin: 10px;
+        }
+        label {
+            display: block;
+            margin-top: 10px;
+            font-weight: bold;
+            font-size: small;
+            letter-spacing: 1px;
+            color: #595959;
+        }
+        input, select, button {
+            width: calc(100% - 16px);
+            padding: 8px;
+            margin-top: 5px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+        select, button {
+            width: 100%;
+        }
+        button {
+            background-color: #007BFF;
+            color: white;
+            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 15px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .chart-container {
+            width: calc(60% - 100px);
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            margin: 10px;
+            position: relative;
+        }
+        .loading {
+            margin-top: 10px;
+            color: #007BFF;
+            font-weight: bold;
+            display: none;
+        }
+        .no-data {
+            color: #999;
+            font-size: 18px;
+            font-weight: bold;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h2>Candle AI Prediction</h2>
+    <form id="inputForm" onsubmit="predict(event)">
+        <label for="SYMBOL">Ticker symbol</label>
+        <input required type="text" id="SYMBOL" name="SYMBOL" value="AAPL">
+
+        <label for="type">Asset type</label>
+        <select required id="type" name="type">
+            <option value="s">Stocks</option>
+            <option value="c">Crypto</option>
+        </select>
+
+        <label for="INTERVAL">Interval</label>
+        <select required id="INTERVAL" name="INTERVAL">
+            <option value="1Min">1 Minute</option>
+            <option value="3Min">3 Minutes</option>
+            <option value="5Min">5 Minutes</option>
+            <option value="30Min">30 Minutes</option>
+            <option value="1Hour">1 Hour</option>
+            <option value="12Hour">12 Hours</option>
+            <option value="24Hour">1 Day</option>
+        </select>
+
+        <label for="LENGTH_H">Training data download amount [h]</label>
+        <input required type="number" id="LENGTH_H" name="LENGTH_H" value="72">
+
+        <label for="PATTERN_LENGTH">Pattern search length [int]</label>
+        <input required type="number" id="PATTERN_LENGTH" name="PATTERN_LENGTH" value="10">
+
+        <label for="RESULT_LENGTH">Pattern search result length [int]</label>
+        <input required type="number" id="RESULT_LENGTH" name="RESULT_LENGTH" value="10">
+
+        <label for="ACCURACY_POWER">Current situation power [float]</label>
+        <input required type="number" id="ACCURACY_POWER" name="ACCURACY_POWER" value="2.2" step="0.1">
+
+        <label for="THRESHOLD_LINEAR_EXP">Threshold linear exponent power [float]</label>
+        <input required type="number" id="THRESHOLD_LINEAR_EXP" name="THRESHOLD_LINEAR_EXP" value="1.4" step="0.1">
+
+        <label for="THRESHOLD_USD">Threshold [usd]</label>
+        <input required type="number" id="THRESHOLD_USD" name="THRESHOLD_USD" value="0.5" step="0.01">
+
+        <button type="submit">Predict</button>
+        <button type="button" onclick="resetDefaults()">Defaults</button>
+    </form>
+    <div class="loading" id="loading">Predicting...</div>
+</div>
+<div class="chart-container">
+    <canvas id="predictionChart"></canvas>
+    <div class="no-data" id="noData">No prediction yet.</div>
+</div>
+<script>
+    function saveSettings() {
+        const inputs = document.querySelectorAll("#inputForm input, #inputForm select");
+        inputs.forEach(input => {
+            document.cookie = `${input.id}=${input.value}; path=/`;
+        });
+    }
+
+    function loadSettings() {
+        const cookies = document.cookie.split('; ');
+        cookies.forEach(cookie => {
+            const [key, value] = cookie.split('=');
+            const input = document.getElementById(key);
+            if (input) input.value = value;
+        });
+    }
+
+    function resetDefaults() {
+        document.cookie.split('; ').forEach(cookie => {
+            document.cookie = `${cookie.split('=')[0]}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;`;
+        });
+        location.reload();
+    }
+
+    document.querySelectorAll("#inputForm input, #inputForm select").forEach(input => {
+        input.addEventListener("change", saveSettings);
+    });
+    loadSettings();
+
+    const resize = () => {
+        const input = document.querySelector(".container");
+        const chart = document.querySelector(".chart-container");
+        chart.style.height = input.getBoundingClientRect().height - 40 + "px";
+        if (document.querySelector("body").getBoundingClientRect().width <= 1000) {
+            input.style.width = "100%";
+            chart.style.width = "100%";
+        }
+        else {
+            input.style.width = "";
+            chart.style.width = "";
+        }
+    }
+    resize();
+    addEventListener("resize", () => resize());
+
+    async function predict() {
+        event.preventDefault();
+        const form = document.getElementById("inputForm");
+        const formData = new FormData(form);
+        formData.delete("type");
+        const params = new URLSearchParams(formData).toString();
+
+        // Show loading indicator
+        document.getElementById("loading").style.display = "block";
+        document.getElementById("noData").style.display = "none";
+        resize();
+        try {
+            const response = await fetch(`http://clc.ix.tc:5000/predict${document.getElementById("type").value === "s" ? "" : "-crypto"}?${params}`);
+            const data = await response.json();
+            updateChart(data);
+        } catch (error) {
+            alert("To many requests or invalid symbol!");
+        } finally {
+            document.getElementById("loading").style.display = "none";
+        }
+    }
+    resize();
+    addEventListener("resize", resize);
+
+    function updateChart(data) {
+        const ctx = document.getElementById('predictionChart').getContext('2d');
+        const noDataMessage = document.getElementById("noData");
+
+        if (!data || !data.pred_prices || data.pred_prices.length === 0) {
+            noDataMessage.style.display = "block";
+            return;
+        } else {
+            noDataMessage.style.display = "none";
+        }
+
+        const candleData = data.candles.slice(-30).map((candle, index) => ({ x: index - 29, y: candle.close }));
+        const predData = data.pred_prices.map((price, index) => ({ x: index, y: price }));
+
+        if (window.myChart) {
+            window.myChart.destroy();
+        }
+
+        window.myChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                datasets: [
+                    {
+                        label: "Past Candles",
+                        data: candleData,
+                        borderColor: "blue",
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.3,
+                        pointRadius: 0,
+                    },
+                    {
+                        label: "Predicted Prices",
+                        data: predData,
+                        borderColor: "red",
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.2,
+                        pointRadius: 0,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        type: 'linear',
+                        position: 'bottom'
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        enabled: true,
+                        mode: 'nearest',
+                        intersect: false,
+                        callbacks: {
+                            label: function(tooltipItem) {
+                                return `$${tooltipItem.raw.y.toFixed(2)}`;
+                            }
+                        }
+                    }
+                }
+            },
+            plugins: [{
+                beforeDraw: (chart) => {
+                    const ctx = chart.ctx;
+                    chart.data.datasets.forEach((dataset, index) => {
+                        const meta = chart.getDatasetMeta(index);
+                        if (!meta.hidden) {
+                            ctx.save();
+                            ctx.shadowColor = dataset.borderColor;
+                            ctx.shadowBlur = 10;
+                            ctx.shadowOffsetX = 0;
+                            ctx.shadowOffsetY = 0;
+                            meta.dataset.draw(ctx);
+                            ctx.restore();
+                        }
+                    });
+                }
+            }]
+        });
+    }
+</script>
+</body>
+</html>
